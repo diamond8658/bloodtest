@@ -1,7 +1,9 @@
 import numpy as np
 import tensorflow as tf
+import itertools
 import pandas as pd
 import sys
+from builtins import range, input
 import os
 from glob import glob
 import matplotlib.pyplot as plt
@@ -14,9 +16,11 @@ from keras.models import Model
 from keras.preprocessing.image import ImageDataGenerator
 from pathlib import Path
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+from sklearn.metrics import confusion_matrix
 from google.colab import drive
 drive.mount('/content/drive')
 
+# Set path to directory containing dataset
 train_path = 'content/drive/MyDrive/BloodTest/dataset2-master/images/TRAIN'
 test_path = 'content/drive/MyDrive/BloodTest/dataset2-master/images/TEST'
 train_images = glob(train_path + "/*/*.jp*g")
@@ -88,6 +92,7 @@ res = model.fit_generator(train_generator,
 
 # Setting up VGG-16 Courtesy of: https://www.kaggle.com/code/kbrans/vgg16-model-83-36-acc
 image_size = (150, 150)
+epochs = 30
 vgg_16 = VGG16(include_top = False, weights = 'imagenet', input_tensor = None, input_shape = (150,150,3), pooling = None)
 
 vgg_16.trainable = True
@@ -143,4 +148,106 @@ res3 = model2.fit_generator(train_generator,
                           validation_steps= val,
                           verbose=1)
 
-# Plotting 
+# Plotting graphs for analysis
+def get_confusion_matrix(data_path, N):
+    # we need to see the data in the same order
+    # for both predictions and targets
+    predictions = []
+    targets = []
+    i = 0
+    for x, y in data_gen.flow_from_directory(data_path, target_size=image_size, shuffle=False, batch_size=batch_size * 2):
+        i += 1
+        if i % 1000 == 0:
+            print(i)
+        p = model.predict(x)
+        p = np.argmax(p, axis=1)
+        y = np.argmax(y, axis=1)
+        predictions = np.concatenate((predictions, p))
+        targets = np.concatenate((targets, y))
+        if len(targets) >= N:
+            break
+
+    cm = confusion_matrix(targets, predictions)
+    return cm
+
+cm = get_confusion_matrix(train_path, len(train_images))
+validation_cm = get_confusion_matrix(test_path, len(test_images))
+
+# Plotting accuracies for models
+plt.plot(res.history['accuracy'], label='acc')
+plt.plot(res.history['val_accuracy'], label='val acc')
+plt.legend()
+plt.show()
+
+plt.plot(res2.history['accuracy'], label='acc')
+plt.plot(res2.history['val_accuracy'], label='val acc')
+plt.legend()
+plt.show()
+
+plt.plot(res3.history['accuracy'], label='acc')
+plt.plot(res3.history['val_accuracy'], label='val acc')
+plt.legend()
+plt.show()
+
+#Plotting Loss for models
+plt.plot(res.history['loss'], label='loss')
+plt.plot(res.history['val_loss'], label='val_loss')
+plt.legend()
+plt.show()
+
+plt.plot(res2.history['loss'], label='loss')
+plt.plot(res2.history['val_loss'], label='val_loss')
+plt.legend()
+plt.show()
+
+plt.plot(res3.history['loss'], label='loss')
+plt.plot(res3.history['val_loss'], label='val_loss')
+plt.legend()
+plt.show()
+
+
+def plot_confusion_matrix(cm, classes,
+                          normalize=False,
+                          title='Confusion matrix',
+                          cmap=plt.cm.Blues):
+    """
+    This function prints and plots the confusion matrix.
+    Normalization can be applied by setting `normalize=True`.
+    """
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        print("Normalized confusion matrix")
+    else:
+        print('Confusion matrix, without normalization')
+
+    print(cm)
+
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.title(title)
+    plt.colorbar()
+    tick_marks = np.arange(len(classes))
+    plt.xticks(tick_marks, classes, rotation=45)
+    plt.yticks(tick_marks, classes)
+
+    fmt = '.2f' if normalize else 'd'
+    thresh = cm.max() / 2.
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        plt.text(j, i, format(cm[i, j], fmt),
+               horizontalalignment="center",
+               color="white" if cm[i, j] > thresh else "black")
+
+    plt.tight_layout()
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label')
+    plt.show()
+
+
+def y2indicator(Y):
+    K = len(set(Y))
+    N = len(Y)
+    I = np.empty((N, K))
+    I[np.arange(N), Y] = 1
+    return I
+
+plot_confusion_matrix(cm, labels, title='Train confusion matrix')
+plot_confusion_matrix(validation_cm, labels, title='Validation confusion matrix')
